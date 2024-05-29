@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# usage: bin/compile <build_dir> <cache_dir> <env_dir>
+
+set -o errexit
+set -o pipefail
+
+if [ -n "${BUILDPACK_DEBUG}" ]; then
+    set -o xtrace
+fi
+
+build_dir="${1:-}"
+cache_dir="${2:-}"
+env_dir="${3:-}"
+base_dir="$( cd -P "$( dirname "${0}" )" && pwd )"
+buildpack_dir="$( readlink -f "${base_dir}/.." )"
+tmp_dir="$( mktemp --tmpdir="/tmp" --directory "grafana-XXXX" )"
+
+readonly build_dir
+readonly cache_dir
+readonly env_dir
+readonly base_dir
+readonly buildpack_dir
+readonly tmp_dir
+
+
+source "${buildpack_dir}/bin/fn.sh"
+source "${buildpack_dir}/VERSIONS"
+
+
+
+start "Installing Grafana"
+
+## Version
+
+version="${GRAFANA_VERSION:-"${GRAFANA_DEFAULT_VERSION}"}"
+readonly version
+
+if [ -z "${version}" ]; then
+    err "Could not retrieve Grafana version."
+    info "Please use the GRAFANA_VERSION environment variable to specify the version to use."
+    failure
+else
+    info "Using Grafana version ${version}."
+fi
+
+## Retrieving package
+
+dist="grafana-${version}.tar.gz"
+cache_file="${cache_dir}/${dist}"
+package_url="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz"
+checksum_url="${package_url}.sha256"
+
+readonly dist
+readonly cache_file
+readonly package_url
+readonly checksum_url
+
+mkdir -p "${tmp_dir}"
+
+if [ -f "${cache_file}" ]; then
+    info "Found file in cache."
+
+    task_start "Checking validity"
+
+    if ! check_cached_file "${cache_file}" "${checksum_url}"; then
+        task_fail
+        err "File in cache is invalid, it has been removed."
+    fi
+
+    task_finish
+fi
+
+if [ ! -f "${cache_file}" ]; then
+    task_start "Downloading"
+
+    if ! download "${package_url}" "${checksum_url}" "${cache_file}"; then
+        task_fail
+        err "An error occured while downloading. Aborting."
+        failure
+    fi
+
+    task_finish
+fi
+
+## Extracting
+
+task_start "Extracting"
+
+if ! tar \
+    --extract \
+    --file="${cache_file}" \
+    --directory="${tmp_dir}" \
+    2>/dev/null
+then
+    task_fail
+    err "An error occured while extracting the archive. Aborting."
+    failure
+fi
+
+task_finish
+
+## Installing
+
+task_start "Installing"
+
+if ! mv "${tmp_dir}/grafana-v${version}/"* "${build_dir}/" 2>/dev/null; then
+    task_fail
+    err "An error occured while installing the files. Aborting."
+    failure
+fi
+
+task_finish
+
+
+success
+
+
+
+start "Building Environment"
+
+
+export PATH="${build_dir}/bin:${PATH}"
+
+mkdir -p "${build_dir}/.profile.d"
+
+cat << EOF > "${build_dir}/.profile.d/050-grafana.sh"
+export PATH="\${PATH}:\${HOME}/bin"
+EOF
+
+
+success
+
+
+
+start "Installing Plugins"
+
+if [ ! -e "${GRAFANA_PLUGINS}" ]; then
+    OLD_IFS=${IFS}
+    IFS=','
+
+    plugin_dir="${build_dir}/plugins"
+    mkdir --parents "${plugin_dir}"
+
+    for plugin in ${GRAFANA_PLUGINS}; do
+        task_start "Installing ${plugin}"
+
+        if ! "${build_dir}/bin/grafana" cli \
+                            --pluginsDir="${plugin_dir}" \
+                            plugins install "${plugin}" >/dev/null
+        then
+            task_fail
+            err "An error occured while installing plugin "${plugin}". Going on."
+        else
+            task_finish
+        fi
+    done
+
+    IFS=${OLD_IFS}
+fi
+
+success
+
+
+
+start "Cleaning up"
+
+
+task_start "Removing temporary files"
+
+if ! rm --recursive --force "${tmp_dir}"; then
+    task_fail
+    failure
+fi
+
+task_finish
+
+
+success

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+echo "Grafana"
+exit 0
