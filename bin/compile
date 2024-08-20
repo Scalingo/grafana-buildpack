@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # usage: bin/compile <build_dir> <cache_dir> <env_dir>
 
-#set -o errexit
-#set -o pipefail
+set -o errexit
+set -o pipefail
 
-#if [ -n "${BUILDPACK_DEBUG}" ]; then
-#    set -o xtrace
-#fi
+if [ -n "${BUILDPACK_DEBUG}" ]; then
+    set -o xtrace
+fi
+
 
 build_dir="${1:-}"
 cache_dir="${2:-}"
@@ -22,8 +23,9 @@ readonly base_dir
 readonly buildpack_dir
 readonly tmp_dir
 
+
 # shellcheck disable=SC1091
-source "${buildpack_dir}/bin/fn.sh"
+source "${buildpack_dir}/bin/sc.sh"
 # shellcheck disable=SC1091
 source "${buildpack_dir}/VERSIONS"
 

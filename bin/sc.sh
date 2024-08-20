@@ -36,20 +36,13 @@ sc::trap::teardown() {
 
 
 sc::_::start() {
-    set -o errexit
-    set -o pipefail
-
-    if [ -n "${BUILDPACK_DEBUG}" ]; then
-        set -o xtrace
-    fi
-
     sc::trap::setup
 }
 
 sc::_::finish() {
     sc::trap::teardown
     echo
-    echo -e "${STEP}${GREEN} All done!${NC}"
+    echo -e "${GREEN}All done!${NC}"
     exit 0
 }
 
@@ -200,6 +193,9 @@ sc::_::list_env_vars() {
 readonly -f sc::_::info
 readonly -f sc::_::warn
 readonly -f sc::_::err
+
+readonly -f sc::trap::setup
+readonly -f sc::trap::teardown
 
 readonly -f sc::_::start
 readonly -f sc::_::finish
