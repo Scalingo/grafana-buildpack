@@ -1,34 +1,37 @@
 #!/usr/bin/env bash
 # usage: bin/compile <build_dir> <cache_dir> <env_dir>
 
-set -o errexit
-set -o pipefail
+#set -o errexit
+#set -o pipefail
 
-if [ -n "${BUILDPACK_DEBUG}" ]; then
-    set -o xtrace
-fi
+#if [ -n "${BUILDPACK_DEBUG}" ]; then
+#    set -o xtrace
+#fi
 
 build_dir="${1:-}"
 cache_dir="${2:-}"
-env_dir="${3:-}"
+# env_dir="${3:-}"
 base_dir="$( cd -P "$( dirname "${0}" )" && pwd )"
 buildpack_dir="$( readlink -f "${base_dir}/.." )"
 tmp_dir="$( mktemp --tmpdir="/tmp" --directory "grafana-XXXX" )"
 
 readonly build_dir
 readonly cache_dir
-readonly env_dir
+# readonly env_dir
 readonly base_dir
 readonly buildpack_dir
 readonly tmp_dir
 
-
+# shellcheck disable=SC1091
 source "${buildpack_dir}/bin/fn.sh"
+# shellcheck disable=SC1091
 source "${buildpack_dir}/VERSIONS"
 
 
+sc::_::start
 
-start "Installing Grafana"
+
+sc::_::step_start "Installing Grafana"
 
 ## Version
 
@@ -36,12 +39,13 @@ version="${GRAFANA_VERSION:-"${GRAFANA_DEFAULT_VERSION}"}"
 readonly version
 
 if [ -z "${version}" ]; then
-    err "Could not retrieve Grafana version."
-    info "Please use the GRAFANA_VERSION environment variable to specify the version to use."
-    failure
-else
-    info "Using Grafana version ${version}."
+    sc::_::err "Could not retrieve Grafana version."
+    sc::_::info "Please use the GRAFANA_VERSION environment variable to specify the version to use."
+    exit
 fi
+
+sc::_::info "Using Grafana version ${version}."
+
 
 ## Retrieving package
 
@@ -55,36 +59,34 @@ readonly cache_file
 readonly package_url
 readonly checksum_url
 
-mkdir -p "${tmp_dir}"
+mkdir --parents "${tmp_dir}"
 
 if [ -f "${cache_file}" ]; then
-    info "Found file in cache."
+    sc::_::info "Found file in cache."
 
-    task_start "Checking validity"
+    sc::_::task_start "Checking validity"
 
-    if ! check_cached_file "${cache_file}" "${checksum_url}"; then
-        task_fail
-        err "File in cache is invalid, it has been removed."
+    if ! sc::_::check_cached_file "${cache_file}" "${checksum_url}"; then
+        sc::_::task_fail "File in cache is invalid, it has been removed."
+    else
+        sc::_::task_finish
     fi
-
-    task_finish
 fi
 
 if [ ! -f "${cache_file}" ]; then
-    task_start "Downloading"
+    sc::_::task_start "Downloading"
 
-    if ! download "${package_url}" "${checksum_url}" "${cache_file}"; then
-        task_fail
-        err "An error occured while downloading. Aborting."
-        failure
+    if ! sc::_::download "${package_url}" "${checksum_url}" "${cache_file}"; then
+        sc::_::task_fail "An error occured while downloading. Aborting."
+        exit
     fi
 
-    task_finish
+    sc::_::task_finish
 fi
 
 ## Extracting
 
-task_start "Extracting"
+sc::_::task_start "Extracting"
 
 if ! tar \
     --extract \
@@ -92,47 +94,42 @@ if ! tar \
     --directory="${tmp_dir}" \
     2>/dev/null
 then
-    task_fail
-    err "An error occured while extracting the archive. Aborting."
-    failure
+    sc::_::task_fail "An error occured while extracting the archive. Aborting."
+    exit
 fi
 
-task_finish
+sc::_::task_finish
 
 ## Installing
 
-task_start "Installing"
+sc::_::task_start "Installing"
 
-if ! mv "${tmp_dir}/grafana-v${version}/"* "${build_dir}/" 2>/dev/null; then
-    task_fail
-    err "An error occured while installing the files. Aborting."
-    failure
+if ! mv "${tmp_dir}/grafana-v${version}/"* --target-directory="${build_dir}" 2>/dev/null; then
+    sc::_::task_fail "An error occured while installing the files. Aborting."
+    exit
 fi
 
-task_finish
+sc::_::task_finish
+
+sc::_::step_finish
 
 
-success
 
-
-
-start "Building Environment"
-
+sc::_::step_start "Building Environment"
 
 export PATH="${build_dir}/bin:${PATH}"
 
-mkdir -p "${build_dir}/.profile.d"
+mkdir --parents "${build_dir}/.profile.d"
 
 cat << EOF > "${build_dir}/.profile.d/050-grafana.sh"
 export PATH="\${PATH}:\${HOME}/bin"
 EOF
 
-
-success
-
+sc::_::step_finish
 
 
-start "Installing Plugins"
+
+sc::_::step_start "Installing Plugins"
 
 if [ ! -e "${GRAFANA_PLUGINS}" ]; then
     OLD_IFS=${IFS}
@@ -142,37 +139,37 @@ if [ ! -e "${GRAFANA_PLUGINS}" ]; then
     mkdir --parents "${plugin_dir}"
 
     for plugin in ${GRAFANA_PLUGINS}; do
-        task_start "Installing ${plugin}"
+        sc::_::task_start "Installing ${plugin}"
 
         if ! "${build_dir}/bin/grafana" cli \
                             --pluginsDir="${plugin_dir}" \
                             plugins install "${plugin}" >/dev/null
         then
-            task_fail
-            err "An error occured while installing plugin "${plugin}". Going on."
+            sc::_::task_fail "An error occured while installing plugin ""${plugin}"". Going on."
         else
-            task_finish
+            sc::_::task_finish
         fi
     done
 
     IFS=${OLD_IFS}
 fi
 
-success
+sc::_::step_finish
 
 
 
-start "Cleaning up"
+sc::_::step_start "Cleaning up"
 
-
-task_start "Removing temporary files"
+sc::_::task_start "Removing temporary files"
 
 if ! rm --recursive --force "${tmp_dir}"; then
-    task_fail
-    failure
+    sc::_::task_fail
+    exit
 fi
 
-task_finish
+sc::_::task_finish
+
+sc::_::step_finish
 
 
-success
+sc::_::finish

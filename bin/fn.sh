@@ -6,44 +6,92 @@ GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
 NC="\033[0m"
 
-info() {
+readonly STEP
+readonly RED
+readonly GREEN
+readonly YELLOW
+readonly NC
+
+
+sc::_::info() {
     echo "       $*"
 }
 
-warn() {
+sc::_::warn() {
     echo -e "${YELLOW} !     $*${NC}"
 }
 
-err() {
+sc::_::err() {
     echo -e "${RED} !!    $*${NC}" >&2
 }
 
-success() {
-    echo -e "${GREEN}       Done.${NC}"
+
+sc::trap::setup() {
+    trap sc::_::fail EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGTERM
 }
 
-failure() {
-    echo -e "${RED}       Failed.${NC}" >&2
+sc::trap::teardown() {
+    trap - EXIT SIGHUP SIGINT SIGQUIT SIGABRT SIGTERM
+}
+
+
+sc::_::start() {
+    set -o errexit
+    set -o pipefail
+
+    if [ -n "${BUILDPACK_DEBUG}" ]; then
+        set -o xtrace
+    fi
+
+    sc::trap::setup
+}
+
+sc::_::finish() {
+    sc::trap::teardown
+    echo
+    echo -e "${STEP}${GREEN} All done!${NC}"
+    exit 0
+}
+
+sc::_::fail() {
+    sc::trap::teardown
+    echo
+    echo -e "${RED}Failed.${NC}" >&2
     exit 1
 }
 
-start() {
+
+sc::_::step_start() {
     echo "${STEP} $*"
 }
 
-task_start() {
+sc::_::step_finish() {
+    echo -e "${GREEN}       Done.${NC}"
+}
+
+sc::_::step_fail() {
+    echo -e "${RED}       Failed.${NC}"
+}
+
+
+sc::_::task_start() {
     echo -n "       $*... "
 }
 
-task_finish() {
+sc::_::task_finish() {
     echo "OK."
 }
 
-task_fail() {
+sc::_::task_fail() {
     echo "Failed."
+
+    if [ -n "${1}" ]; then
+        sc::_::err "${1}"
+    fi
 }
 
-check_cached_file() {
+
+sc::_::check_cached_file() {
     local rc
     local cached
     local hash_url
@@ -68,7 +116,7 @@ check_cached_file() {
             checksum="$( md5sum "${cached}" | cut -d " " -f 1 )"
             ;;
         *)
-            echo "Unsupported hash algorithm. Aborting."
+            sc::_::info "Unsupported hash algorithm. Aborting."
             rc=2
             ;;
     esac
@@ -90,7 +138,7 @@ check_cached_file() {
     return "${rc}"
 }
 
-download() {
+sc::_::download() {
     local rc
     local url
     local hash_url
@@ -102,14 +150,15 @@ download() {
     cached="${3}"
 
     if curl --silent --location "${url}" --output "${cached}"; then
-        check_cached_file "${cached}" "${hash_url}"
+        sc::_::check_cached_file "${cached}" "${hash_url}"
         rc=0
     fi
 
     return "${rc}"
 }
 
-read_env() {
+
+sc::_::read_env() {
     local env_dir
     local env_vars
 
@@ -125,7 +174,7 @@ read_env() {
     done <<< "${env_vars}"
 }
 
-list_env_vars() {
+sc::_::list_env_vars() {
     local env_dir
     local env_vars
     local blacklist_regex
@@ -136,6 +185,7 @@ list_env_vars() {
 
     if [ -d "${env_dir}" ]
     then
+        # shellcheck disable=SC2010
         env_vars="$( ls "${env_dir}" \
                         | grep \
                             --invert-match \
@@ -145,3 +195,26 @@ list_env_vars() {
 
     echo "${env_vars}"
 }
+
+
+readonly -f sc::_::info
+readonly -f sc::_::warn
+readonly -f sc::_::err
+
+readonly -f sc::_::start
+readonly -f sc::_::finish
+readonly -f sc::_::fail
+
+readonly -f sc::_::step_start
+readonly -f sc::_::step_finish
+readonly -f sc::_::step_fail
+
+readonly -f sc::_::task_start
+readonly -f sc::_::task_finish
+readonly -f sc::_::task_fail
+
+readonly -f sc::_::check_cached_file
+readonly -f sc::_::download
+
+readonly -f sc::_::read_env
+readonly -f sc::_::list_env_vars
