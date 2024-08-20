@@ -49,7 +49,11 @@ This buildpack installs Grafana into a Scalingo app image.
 
 6. Create a new `GF_DATABASE_URL` environment var. It must be a copy of the one
    given by the platform and named `SCALINGO_POSTGRESQL_URL`, **except that
-   `sslmode` must be set to `require` instead of `prefer`**.
+   `sslmode` must be set to `require` instead of `prefer`**:
+
+   ```bash
+   scalingo --app my-grafana env-set GF_DATABASE_URL="postgres://<username>:<password>@<db_url>:<db_port>/<database>?sslmode=require
+   ```
 
 7. (optional) Specify the Grafana version to deploy:
 
