@@ -50,7 +50,7 @@ This buildpack installs Grafana into a Scalingo app image.
 
 6. Create a new `GF_DATABASE_URL` environment var. It must be a copy of the one
    given by the platform and named `SCALINGO_POSTGRESQL_URL`, **except that
-   `ssl_mode` must be set to `require` instead of `prefer`**.
+   `sslmode` must be set to `require` instead of `prefer`**.
 
 7. (optional) Specify the Grafana version to deploy:
 
