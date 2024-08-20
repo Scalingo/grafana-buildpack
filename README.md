@@ -45,7 +45,6 @@ This buildpack installs Grafana into a Scalingo app image.
    scalingo --app my-grafana env-set GF_SECURITY_ADMIN_USER="admin"
    scalingo --app my-grafana env-set GF_SECURITY_ADMIN_PASSWORD="secret"
    scalingo --app my-grafana env-set GF_SERVER_HTTP_PORT="\$PORT"
-   scalingo --app my-grafana env-set GF_SERVER_ROOT_URL="https://my-grafana.osc-fr1.scalingo.io"
    ```
 
 6. Create a new `GF_DATABASE_URL` environment var. It must be a copy of the one
