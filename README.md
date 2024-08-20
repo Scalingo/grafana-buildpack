@@ -29,7 +29,7 @@ This buildpack installs Grafana into a Scalingo app image.
 3. Attach a PostgreSQL addon:
 
    ```bash
-   scalingo --app my-grafana addons-add postgresql postgresql-starter-256
+   scalingo --app my-grafana addons-add postgresql postgresql-starter-512
    ```
 
 4. Instruct the platform to use this buildpack:
