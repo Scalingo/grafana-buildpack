@@ -1,38 +1,34 @@
 #!/usr/bin/env bash
 # usage: bin/compile <build_dir> <cache_dir> <env_dir>
 
-cmnlib_url="https://s3url/bucket/version/cmnlib.sh"
+cmnlib_url="https://github.com/Scalingo/cmnlib/raw/refs/tags/<version>/cmnlib.sh"
 
-if ! declare -F cmn::output::info >/dev/null; then
-	source /dev/stdin <<< \
-		"$( curl --silent --location --retry 3 "${cmnlib_url}" \
-		|| printf "echo ' 🗙 Unable to load cmnlib, aborting.' >&2 && exit 1"; )"
-fi
+#if ! declare -F cmn::output::info >/dev/null; then
+#	source /dev/stdin <<< \
+#		"$( curl --silent --location --retry 3 "${cmnlib_url}" \
+#		|| printf "echo ' 🗙 Unable to load cmnlib, aborting.' >&2 && exit 1"; )"
+#fi
 
 # shellcheck disable=SC1091
 source "/buildpacks/cmnlib.sh"
 
-build_dir="${1:-}"
-cache_dir="${2:-}"
-#env_dir="${3:-}"
-base_dir="$( cd -P "$( dirname "${0}" )" && pwd )"
-buildpack_dir="$( readlink -f "${base_dir}/.." )"
-tmp_dir="$( mktemp --directory --tmpdir="/tmp" --quiet "bp-XXXXXX" )"
+cmn::main::start "${0}" "${1}" "${2}" "${3}"
 
-readonly build_dir
-readonly cache_dir
-#readonly env_dir
-readonly base_dir
-readonly buildpack_dir
-readonly tmp_dir
-
-cmn::main::start
-
-cmn::step::start "Setting up build"
+# -----------------------------------------------------------------------------
 
 # shellcheck disable=SC1091
 source "${buildpack_dir}/VERSIONS"
 version="${GRAFANA_VERSION:-"${GRAFANA_DEFAULT_VERSION}"}"
+
+archive="grafana-${version}.tar.gz"
+file_url="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz"
+hash_url="${file_url}.sha256"
+file_path="${tmp_dir}/${archive}"
+hash_path="${tmp_dir}/${archive}.sha256"
+cache_file="${cache_dir}/${archive}"
+require_download=0
+
+# -----------------------------------------------------------------------------
 
 if [ -z "${version}" ]; then
 	cmn::step::fail
@@ -45,124 +41,115 @@ if [ -z "${version}" ]; then
 	exit 11
 fi
 
-cmn::output::info "Using Grafana version ${version}."
+cmn::output::info "Deploying Grafana ${version}"
+
+# -----------------------------------------------------------------------------
+
+cmn::step::start "Installing prerequisites"
+
+cmn::task::start "Downloading archive checksum"
+if ! cmn::file::download "${hash_url}" "${hash_path}"; then
+	cmn::task::fail
+	cmn::step::fail
+
+	exit 12
+fi
+cmn::task::finish
+
 cmn::step::finish
 
-cmn::step::start "Getting Grafana"
+# -----------------------------------------------------------------------------
 
-archive="grafana-${version}.tar.gz"
-file_url="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz"
-hash_url="${file_url}.sha256"
-file_path="${tmp_dir}/${archive}"
-hash_path="${tmp_dir}/${archive}.sha256"
-cache_file="${cache_dir}/${archive}"
-require_download=0
+cmn::step::start "Installing Grafana"
 
-if [ -f "${cache_file}" ]; then
-	cmn::output::info "Found matching file in cache."
-	cmn::task::start "Downloading checksum"
-
-	if ! cmn::file::download "${hash_url}" "${hash_path}"; then
-		cmn::task::fail
-		# Remove downloaded hash file:
-		rm --force "${hash_path}"
-		cmn::output::info <<- EOM
-			Unable to download the checksum file.
-			Falling back to re-downloading everything.
-		EOM
-	else
-		cmn::task::finish
-
-		cmn::task::start "Checking file validity"
-
-		if ! cmn::file::check_checksum "${cache_file}" "${hash_path}"; then
-			cmn::task::fail
-			# File in cache does not seem valid, remove it, as well as the hash
-			# file:
-			rm --force "${cache_file}"
-			rm --force "${hash_path}"
-		else
-			# File is in cache, and valid.
-			cmn::task::finish
-			require_download=1
-		fi
-	fi
-fi
-
-if [ $require_download -eq 0 ]; then
-	cmn::task::start "Downloading Grafana ${version}"
-
+if [ ! -f "${cache_file}" ]; then
+	cmn::task::start "Downloading archive"
 	if ! cmn::file::download_and_check "${file_url}" "${hash_url}"\
 									   "${file_path}" "${hash_path}"
 	then
-		cmn::task::fail "Could not safely download Grafana ${version}!"
+		cmn::task::fail "Could not safely download Grafana!"
 		cmn::step::fail
 		exit 21
 	fi
-
 	cmn::task::finish
 
-	cmn::task::start "Putting Grafana ${version} in cache for later use"
-
+	cmn::task::start "Putting archive in cache for future use"
 	if ! mv "${file_path}" "${cache_file}"; then
-		cmn::task::fail <<- EOM
-			Unable to store ${archive} in the cache!
-			Aborting.
-		EOM
+		cmn::task::fail
 		cmn::step::fail
+
 		exit 22
 	fi
+	cmn::task::finish
+else
+	cmn::output::info "Found matching file in cache."
 
+	cmn::task::start "Checking archive validity"
+	if ! cmn::file::check_checksum "${cache_file}" "${hash_path}"; then
+		cmn::task::fail
+		cmn::output::warn <<- EOM
+			Unable to check archive validity.
+			I'm now removing the file from the cache to force
+			a new download during the next deployment attempt.
+		EOM
+
+		# File in cache does not seem valid,
+		# remove it so a future run can be successful
+		rm --force "${cache_file}"
+		cmn::step::fail
+
+		exit 23
+	fi
 	cmn::task::finish
 fi
 
-cmn::step::finish
-
 # From this point we have a valid file in cache.
-cmn::step::start "Installing Grafana"
 
 cmn::task::start "Extracting"
-
 if ! tar --extract --file="${cache_file}" --directory="${tmp_dir}" 2>/dev/null
 then
-	cmn::task::fail <<- EOM
-		An error occured while extracting the archive.
-		Aborting.
-	EOM
+	cmn::task::fail
 	cmn::step::fail
-	exit 31
-fi
 
+	exit 24
+fi
 cmn::task::finish
 
 cmn::task::start "Installing"
-
 if ! mv "${tmp_dir}/grafana-v${version}/"* \
 		--target-directory="${build_dir}" 2>/dev/null
 then
-	cmn::task::fail <<- EOM
-		An error occured while installing the files.
-		Aborting.
-	EOM
+	cmn::task::fail
 	cmn::step::fail
-	exit 32
-fi
 
+	exit 25
+fi
 cmn::task::finish
 
 cmn::step::finish
+
+# -----------------------------------------------------------------------------
 
 cmn::step::start "Building Environment"
 
 export PATH="${build_dir}/bin:${PATH}"
 
+cmn::task::start "Copying profile.d script"
 mkdir --parents "${build_dir}/.profile.d"
 
-cat << EOF > "${build_dir}/.profile.d/050-grafana.sh"
-export PATH="\${PATH}:\${HOME}/bin"
-EOF
+if ! cp "${buildpack_dir}/files/profile.d/050-grafana.sh" \
+	"${build_dir}/.profile.d/" 2>/dev/null
+then
+	cmn::task::fail
+	cmn::step::fail
+
+	exit 30
+fi
+cmn::task::finish
 
 cmn::step::finish
+
+# -----------------------------------------------------------------------------
 
 cmn::step::start "Installing Plugins"
 
@@ -192,10 +179,15 @@ fi
 
 cmn::step::finish
 
+# -----------------------------------------------------------------------------
+
 cmn::step::start "Cleaning up"
+
 cmn::task::start "Removing temporary files"
 rm --recursive --force "${tmp_dir}"
 cmn::task::finish
+
 cmn::step::finish
+
 
 cmn::main::finish
