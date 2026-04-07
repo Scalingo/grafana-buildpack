@@ -103,7 +103,6 @@ cmn::task::finish
 
 # From this point we have a valid file in cache.
 
-
 cmn::task::start "Extracting"
 tar --extract --file="${cache_file}" --directory="${build_dir:?}" \
 	--strip-components=1
@@ -116,40 +115,40 @@ cmn::step::start "Building Environment"
 export PATH="${build_dir:?}/bin:${PATH}"
 
 cmn::task::start "Copying profile.d script"
-mkdir --parents "${build_diri:?}/.profile.d"
+mkdir --parents "${build_dir:?}/.profile.d"
 cp "${buildpack_dir:?}/vendor/profile.d/050-grafana.sh" \
 	"${build_dir:?}/.profile.d/"
 cmn::task::finish
 
 # -----------------------------------------------------------------------------
 
-cmn::step::start "Installing Plugins"
-# Make sure GRAFANA_PLUGINS is defined:
-GRAFANA_PLUGINS="${GRAFANA_PLUGINS:-""}"
+if [ -n "${GRAFANA_PLUGINS}" ]; then
+	cmn::step::start "Installing Plugins"
 
-# Replace ',' with ' ':
-plugins="${GRAFANA_PLUGINS//,/ }"
+	# Replace ',' with ' ':
+	plugins="${GRAFANA_PLUGINS//,/ }"
 
-# Default path for plugins:
-plugins_dir="${build_dir:?}/plugins"
+	# Default path for plugins:
+	plugins_dir="${build_dir:?}/plugins"
 
-if [ -v GF_PATHS_PLUGINS ]; then
-	plugins_dir="${GF_PATHS_PLUGINS/\/app/"${build_dir:?}"}"
+	if [ -n "${GF_PATHS_PLUGINS}" ]; then
+		plugins_dir="${GF_PATHS_PLUGINS/\/app/"${build_dir:?}"}"
+	fi
+
+	mkdir --parents "${plugins_dir}"
+
+	# (! Don't quote $plugins)
+	for plugin in ${plugins}; do
+		cmn::task::start "Installing plugin ${plugin}"
+		"${build_dir:?}/bin/grafana" cli --pluginsDir="${plugins_dir}" \
+			plugins install "${plugin}" >/dev/null \
+			|| cmn::main::fail "${?}" <<-EOM
+				Unable to install plugin: ${plugin}.
+				Aborting.
+			EOM
+		cmn::task::finish
+	done
 fi
-
-mkdir --parents "${plugins_dir}"
-
-# (! Don't quote $plugins)
-for plugin in ${plugins}; do
-	cmn::task::start "Installing plugin ${plugin}"
-	"${build_dir:?}/bin/grafana" cli --pluginsDir="${plugins_dir}" \
-		plugins install "${plugin}" >/dev/null \
-		|| cmn::main::fail "${?}" <<-EOM
-			Unable to install plugin: ${plugin}.
-			Aborting.
-		EOM
-	cmn::task::finish
-done
 
 # -----------------------------------------------------------------------------
 
