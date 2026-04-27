@@ -1,5 +1,7 @@
 dependencies = []
 description = "Grafana Buildpack"
+flags = ["buildpack"]
+languages = ["shell"]
 owner = "team-infrastructure-services@scalingo.com"
 team = "IST"
 tier = 1
