@@ -1,0 +1,6 @@
+dependencies = []
+description = "Grafana Buildpack"
+owner = "team-infrastructure-services@scalingo.com"
+team = "IST"
+tier = 1
+version = "1.1.2"
