@@ -106,10 +106,15 @@ sc::_::task_finish
 
 sc::_::task_start "Installing"
 
-if ! mv "${tmp_dir}/grafana-v${version}/"* --target-directory="${build_dir}" 2>/dev/null; then
-    sc::_::task_fail "An error occured while installing the files. Aborting."
-    exit
-fi
+# Use brace expansion to handle the optional prefixing 'v':
+for src in "${tmp_dir}"/grafana-{v,}"${version}"; do
+    if [[ -d "${src}" ]]; then
+        if ! mv "${src}"/* --target-directory="${build_dir}"; then
+            sc::_::task_fail "An error occured while installing the files. Aborting."
+            exit
+        fi
+    fi
+done
 
 sc::_::task_finish
 
