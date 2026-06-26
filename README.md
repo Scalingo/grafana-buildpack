@@ -1,101 +1,40 @@
-# Grafana buildpack
+# Grafana Buildpack
 
-This buildpack installs Grafana into a Scalingo app image.
+Deploy [Grafana] on Scalingo using this buildpack.
 
-## Usage
 
-1. Create and initialize a new git repository:
+## Documentation
 
-   ```bash
-   mkdir my-grafana
-   cd my-grafana
-   git init .
-   ```
+See the official tutorial:
+👉 https://doc.scalingo.com/tutorials/grafana
 
-2. Create an app:
 
-   ```bash
-   scalingo create my-grafana
-   ```
+## Default Supported Version
 
-   This also creates a git-remote called `scalingo`:
+The default Grafana version deployed by this buildpack is specified in the
+`GRAFANA_DEFAULT_VERSION` variable, which can be found in the [`VERSIONS`]
+file.
 
-   ```bash
-   git remote -v
-   scalingo    git@ssh.osc-fr1.scalingo.io:my-grafana.git (fetch)
-   scalingo    git@ssh.osc-fr1.scalingo.io:my-grafana.git (push)
-   ```
 
-3. Attach a PostgreSQL addon:
+## Maintenance Status
 
-   ```bash
-   scalingo --app my-grafana addons-add postgresql postgresql-starter-512
-   ```
+This buildpack is maintained by Scalingo solely for the deployment assets and
+integration guidance provided in this repository and its associated
+documentation.
 
-4. Instruct the platform to use this buildpack:
+Scalingo does not administer, manage, operate, or automatically upgrade
+customer Grafana instances.
 
-   ```bash
-    scalingo --app my-grafana env-set BUILDPACK_URL="https://github.com/Scalingo/grafana-buildpack"
-    ```
+Applying Grafana upgrades and security patches remains the responsibility of
+the customer by updating the `GRAFANA_VERSION` variable and redeploying the
+application.
 
-5. Set a few environment variables: **Please adjust the values**
+Should Scalingo discontinue maintenance of this buildpack or no longer
+recommend its use, a notice period of at least six months will be provided
+whenever feasible, except where immediate action is required due to security
+concerns or external constraints.
 
-   ```bash
-   scalingo --app my-grafana env-set GF_PATHS_PLUGINS="/app/plugins"
-   scalingo --app my-grafana env-set GF_SECURITY_ADMIN_USER="admin"
-   scalingo --app my-grafana env-set GF_SECURITY_ADMIN_PASSWORD="secret"
-   scalingo --app my-grafana env-set GF_SERVER_HTTP_PORT="\$PORT"
-   ```
 
-6. Create a new `GF_DATABASE_URL` environment var. It must be a copy of the one
-   given by the platform and named `SCALINGO_POSTGRESQL_URL`, **except that
-   `sslmode` must be set to `require` instead of `prefer`**:
+[`VERSIONS`]: VERSIONS?plain=1#L3
 
-   ```bash
-   scalingo --app my-grafana env-set GF_DATABASE_URL="postgres://<username>:<password>@<db_url>:<db_port>/<database>?sslmode=require
-   ```
-
-7. (optional) Specify the Grafana version to deploy:
-
-   ```bash
-   scalingo --app my-grafana env-set GRAFANA_VERSION="11.0.0"
-   ```
-
-8. (optional) Add some plugins using the `GRAFANA_PLUGINS` environment var:
-
-   ```bash
-   scalingo --app my-grafana env-set GRAFANA_PLUGINS="esnet-arcdiagram-panel"
-   ```
-
-9. (optional) Scale to a L container:
-
-   ```bash
-   scalingo --app my-grafana scale web:1:L
-   ```
-
-10. Create an empty commit in your repo:
-
-   ```bash
-   git commit --allow-empty -m "First deployment"
-   ```
-
-11. Deploy:
-
-   ```bash
-   git push scalingo main
-   ```
-
-### Environment
-
-The following environment variables are available for you to tweak your
-deployment:
-
-#### `GRAFANA_PLUGINS`
-
-List of Grafana plugins to install.\
-Defaults to being unset.
-
-#### `GRAFANA_VERSION`
-
-The version of Grafana you want to deploy.\
-Defaults to `GRAFANA_DEFAULT_VERSION`
+[Grafana]: https://grafana.com/
