@@ -1,0 +1,7 @@
+# This is a tab-separated file.
+# Each row has its own line and must have 3 columns (fields) separated by a tab character: version, URL and checksum.
+# The default value (the one used as default by the buildpack) must have a fourth column, whose value MUST be "default".
+# Only one row can have the "default" column.
+# Lines starting with a # are treated as comments. Empty lines are ignored.
+
+13.2.1	https://dl.grafana.com/grafana/release/13.2.1/grafana_13.2.1_33191028959_linux_amd64.tar.gz	sha256:849b3f17a0a318a2f1a681b663e9feb4e4fc7f70d43bb0b4ea07cd34b1987462	default

@@ -1,61 +1,99 @@
 #!/usr/bin/env bash
 # usage: bin/compile <build_dir> <cache_dir> <env_dir>
 
+cmnlib="$( readlink -f "$( dirname "${0}" )/../vendor/cmnlib.sh" )"
 # shellcheck source=vendor/cmnlib.sh
-source "$( readlink -f "$( dirname "${0}" )/../vendor/cmnlib.sh" )"
+source "${cmnlib}"
+
 
 cmn::main::start "${0}" "${1}" "${2}" "${3}"
 
 # -----------------------------------------------------------------------------
 
-# shellcheck source=VERSIONS
-source "${buildpack_dir:?}/VERSIONS"
-version="${GRAFANA_VERSION:-"${GRAFANA_DEFAULT_VERSION}"}"
+# Inventory file:
+inventory="${buildpack_dir:?}/INVENTORY.tsv"
 
-archive="grafana-${version}.tar.gz"
+# This statement won't fail even if cmn::inventory::get_default were to fail.
+version="${GRAFANA_VERSION:-$( cmn::inventory::get_default "${inventory}" )}"
 
-file_url="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz"
-hash_url="${file_url}.sha256"
+if [[ -z "${version}" ]]; then
+	cmn::main::fail 1 <<- EOM
+		Unable to determine which version of Grafana to deploy.
+		It seems like there's no default version in the inventory file either,
+		which isn't OK.
 
-cache_file="${cache_dir:?}/${archive}"
-hash_file="${tmp_dir:?}/${archive}.sha256"
+		Please:
+		1. Set GRAFANA_VERSION environment variable to the desired value, and
+		   try to redeploy. It should pass.
+		2. Either reach out to our Support Team to let them know about this
+		   situation, or file an issue in the grafana-buildpack repository
+		   (https://github.com/Scalingo/grafana-buildpack/issues).
+		Thanks <3
+
+		Aborting for now.
+	EOM
+fi
+
+if ! archive_url="$( cmn::inventory::get_url "${inventory}" "${version}" )"
+then
+	cmn::main::fail 1 <<- EOM
+		Unable to retrieve download URL for version ${version}".
+		It seems like there's an issue with the buildpack inventory file.
+
+		Please either reach out to our Support Team to let them know about this
+		situation, or file an issue in the grafana-buildpack repository
+		(https://github.com/Scalingo/grafana-buildpack/issues)
+		Thanks <3
+
+		Aborting for now.
+	EOM
+fi
+
+if ! archive_checksum="$( cmn::inventory::get_checksum "${inventory}" "${version}" )"
+then
+	cmn::main::fail 1 <<- EOM
+		Unable to retrieve checksum for version ${version}".
+		It seems like there's an issue with the buildpack inventory file.
+
+		Please either reach out to our Support Team to let them know about this
+		situation, or file an issue in the grafana-buildpack repository
+		(https://github.com/Scalingo/grafana-buildpack/issues)
+		Thanks <3
+
+		Aborting for now.
+	EOM
+fi
+
+cache_file="${cache_dir:?}/grafana-${version}.tar.gz"
+grafana_dir="${build_dir:?}/grafana"
+build_log="${tmp_dir:?}/build.log"
+
+cmn::output::info "Deploying Grafana ${version}"
 
 # -----------------------------------------------------------------------------
 
-cmn::step::start "Installing Grafana ${version}"
-
-# We always check the archive validity using a freshly downloaded checksum to
-# detect/prevent immutability issues (i.e. cases where upstream replaces the
-# archive at the same URL/same version number)
-# So let's download the checksum:
-
-cmn::task::start "Downloading checksum"
-cmn::file::download "${hash_url}" "${hash_file}" \
-	|| cmn::main::fail "${?}" <<-EOM
-		Unable to download checksum file.
-		Aborting.
-	EOM
-cmn::task::finish
+cmn::step::start "Installing Grafana"
 
 if [[ ! -f "${cache_file}" ]]; then
-	# The archive doesn't exist in cache.
+	# The archive doesn't exist in the cache.
 
 	# Remove any existing cached archive, as they are probably for another
 	# version:
 	cmn::task::start "Cleaning cache"
-	rm --recursive --force "${cache_dir:?}"/grafana-*.tar.gz
+	rm --recursive --force "${cache_dir:?}"/grafana*.tar.gz
 	cmn::task::finish
 
 	# Download appropriate version:
 	cmn::task::start "Downloading archive"
-	cmn::file::download "${file_url}" "${cache_file}" \
-		|| cmn::main::fail "${?}" <<-EOM
+	if ! cmn::file::download "${archive_url}" "${cache_file}"; then
+		cmn::main::fail "${?}" <<-EOM
 			Unable to download Grafana archive.
 			Aborting.
 		EOM
+	fi
 	cmn::task::finish
 else
-	# The archive is in cache
+	# The archive is in cache.
 
 	cmn::output::info "Found matching file in cache."
 fi
@@ -63,48 +101,43 @@ fi
 # From this point, we have an archive in cache.
 
 # We always check the archive validity to prevent cache corruption and other
-# issues
+# issues.
 cmn::task::start "Checking archive validity"
-cmn::file::validate_checksum "${cache_file}" "${hash_file}" \
-	|| {
-		# File in cache does not seem valid,
-		# remove it so a future run can be successful
-		rm --force "${cache_file}"
+if ! cmn::file::validate_checksum "${cache_file}" "${archive_checksum}"; then
+	# File in cache does not seem valid,
+	# remove it so a future run can be successful
+	rm --force "${cache_file}"
 
-		cmn::main::fail 2 <<-EOM
-			The checksum for the archive file in the cache doesn't match what's
-			expected.
+	cmn::main::fail 2 <<-EOM
+		The checksum for the archive file in the cache doesn't match what's
+		expected.
 
-			Here are the most common causes:
+		Here are the most common causes:
 
-			- The archive file in the cache is corrupt. This can unfortunately
-			  happen, but has no strong consequences. Triggering a new
-			  deployment should fix the issue.
+		- A networking issue occurred, causing the downloaded file to
+		  be incomplete or corrupt. Triggering a new deployment should force
+		  the platform to download the archive again, and the deployment should
+		  pass.
 
-			- A networking issue occurred, causing the downloaded checksum file
-			  to be incomplete or corrupt. Triggering a new deployment should
-			  force the platform to download the archive and the checksum
-			  again, and the deployment should pass.
+		- Upstream replaced the archive and its checksum, resulting in the
+		  same version number having a different checksum. This could mean a
+		  malicious threat tampered the source archive and its checksum.
+		  Please check upstream for a potential explanation and make sure it's
+		  still trustable.
 
-			- Upstream replaced the archive and its checksum, resulting in the
-			  same version number having a different checksum.
-			  This could mean a malicious threat tampered the source archive
-			  and its checksum.
-			  Please check upstream for a potential explanation and make sure
-			  it's still trustable.
+		In all cases, the cached archive has been removed to force a new
+		download during the next deployment attempt.
 
-			In all cases, the cached archive has been removed to force a new
-			download during the next deployment attempt.
-
-			Aborting.
-		EOM
-	}
+		Aborting.
+	EOM
+fi
 cmn::task::finish
 
 # From this point we have a valid file in cache.
 
 cmn::task::start "Extracting"
-tar --extract --file="${cache_file}" --directory="${build_dir:?}" \
+mkdir --parents "${grafana_dir}"
+tar --extract --file="${cache_file}" --directory="${grafana_dir}" \
 	--strip-components=1
 cmn::task::finish
 
@@ -112,7 +145,11 @@ cmn::task::finish
 
 cmn::step::start "Building Environment"
 
-export PATH="${build_dir:?}/bin:${PATH}"
+PATH="${grafana_dir:?}/bin:${PATH}"
+export PATH
+
+GF_PATHS_HOME="${grafana_dir}"
+export GF_PATHS_HOME
 
 cmn::task::start "Copying profile.d script"
 mkdir --parents "${build_dir:?}/.profile.d"
@@ -122,30 +159,37 @@ cmn::task::finish
 
 # -----------------------------------------------------------------------------
 
-if [ -n "${GRAFANA_PLUGINS}" ]; then
+if [[ -n "${GRAFANA_PLUGINS}" ]]; then
 	cmn::step::start "Installing Plugins"
 
-	# Replace ',' with ' ':
-	plugins="${GRAFANA_PLUGINS//,/ }"
+	# Create an array of plugins from GRAFANA_PLUGINS:
+	IFS=',' read -ra plugins <<< "${GRAFANA_PLUGINS}"
 
 	# Default path for plugins:
-	plugins_dir="${build_dir:?}/plugins"
+	plugins_dir="${grafana_dir}/plugins"
 
-	if [ -n "${GF_PATHS_PLUGINS}" ]; then
+	if [[ -n "${GF_PATHS_PLUGINS}" ]]; then
 		plugins_dir="${GF_PATHS_PLUGINS/\/app/"${build_dir:?}"}"
 	fi
 
 	mkdir --parents "${plugins_dir}"
 
 	# (! Don't quote $plugins)
-	for plugin in ${plugins}; do
+	for plugin in "${plugins[@]}"; do
 		cmn::task::start "Installing plugin ${plugin}"
-		"${build_dir:?}/bin/grafana" cli --pluginsDir="${plugins_dir}" \
-			plugins install "${plugin}" >/dev/null \
-			|| cmn::main::fail "${?}" <<-EOM
-				Unable to install plugin: ${plugin}.
+		if ! grafana cli \
+			--pluginsDir="${plugins_dir}" \
+			plugins install "${plugin}" \
+			>"${build_log}" 2>&1
+		then
+			cmn::main::fail "${?}" <<-EOM
+				Unable to install plugin ${plugin}.
+				Log:
+				$( cat "${build_log}" )
+
 				Aborting.
 			EOM
+		fi
 		cmn::task::finish
 	done
 fi

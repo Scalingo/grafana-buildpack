@@ -3,7 +3,7 @@
 cat << EOF
 ---
 config_vars:
-  PATH: "/app/bin:/usr/local/bin:/usr/bin:/bin"
+  PATH: "/app/grafana/bin:/usr/local/bin:/usr/bin:/bin"
 default_process_types:
   web: grafana server
 EOF
