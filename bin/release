@@ -4,6 +4,7 @@ cat << EOF
 ---
 config_vars:
   PATH: "/app/grafana/bin:/usr/local/bin:/usr/bin:/bin"
+  GF_PATHS_HOME: "/app/grafana"
 default_process_types:
   web: grafana server
 EOF
