@@ -174,7 +174,6 @@ if [[ -n "${GRAFANA_PLUGINS}" ]]; then
 
 	mkdir --parents "${plugins_dir}"
 
-	# (! Don't quote $plugins)
 	for plugin in "${plugins[@]}"; do
 		cmn::task::start "Installing plugin ${plugin}"
 		if ! grafana cli \
