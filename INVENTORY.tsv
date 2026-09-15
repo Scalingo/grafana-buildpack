@@ -4,4 +4,8 @@
 # Only one row can have the "default" column.
 # Lines starting with a # are treated as comments. Empty lines are ignored.
 
-13.2.1	https://dl.grafana.com/grafana/release/13.2.1/grafana_13.2.1_33191028959_linux_amd64.tar.gz	sha256:849b3f17a0a318a2f1a681b663e9feb4e4fc7f70d43bb0b4ea07cd34b1987462	default
+13.2.2	https://dl.grafana.com/grafana/release/13.2.2/grafana_13.2.2_34846740809_linux_amd64.tar.gz	sha256:9662c838a09824fdb072e5f6fbdd45b62cf541b20f3d609ea5011e6e5f544c8f	default
+13.2.1	https://dl.grafana.com/grafana/release/13.2.1/grafana_13.2.1_33191028959_linux_amd64.tar.gz	sha256:849b3f17a0a318a2f1a681b663e9feb4e4fc7f70d43bb0b4ea07cd34b1987462
+13.1.6	https://dl.grafana.com/grafana/release/13.1.6/grafana_13.1.6_34846748635_linux_amd64.tar.gz	sha256:c6fadb0a4efe53f6a360c962a5c8f8d962be05b1c4657b667c66d5dc69c8215a
+13.0.9	https://dl.grafana.com/grafana/release/13.0.9/grafana_13.0.9_34840154094_linux_amd64.tar.gz	sha256:b4927f2065758cbb1bb0d73a921f824aff0d59cbb97f3c7687614a1b78261b69
+12.4.11	https://dl.grafana.com/grafana/release/12.4.11/grafana_12.4.11_34840143930_linux_amd64.tar.gz	sha256:b4b73a3a5639dcb4c3649d9a3998c2746b62d7b8275ec523b62287fa78382d11
