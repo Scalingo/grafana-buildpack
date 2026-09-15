@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-GRAFANA_DEFAULT_VERSION="13.1.0"

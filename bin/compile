@@ -1,182 +1,198 @@
 #!/usr/bin/env bash
 # usage: bin/compile <build_dir> <cache_dir> <env_dir>
 
-set -o errexit
-set -o pipefail
+cmnlib="$( readlink -f "$( dirname "${0}" )/../vendor/cmnlib.sh" )"
+# shellcheck source=vendor/cmnlib.sh
+source "${cmnlib}"
 
-if [ -n "${BUILDPACK_DEBUG}" ]; then
-    set -o xtrace
+
+cmn::main::start "${0}" "${1}" "${2}" "${3}"
+
+# -----------------------------------------------------------------------------
+
+# Inventory file:
+inventory="${buildpack_dir:?}/INVENTORY.tsv"
+
+# This statement won't fail even if cmn::inventory::get_default were to fail.
+version="${GRAFANA_VERSION:-$( cmn::inventory::get_default "${inventory}" )}"
+
+if [[ -z "${version}" ]]; then
+	cmn::main::fail 1 <<- EOM
+		Unable to determine which version of Grafana to deploy.
+		It seems like there's no default version in the inventory file either,
+		which isn't OK.
+
+		Please:
+		1. Set GRAFANA_VERSION environment variable to the desired value, and
+		   try to redeploy. It should pass.
+		2. Either reach out to our Support Team to let them know about this
+		   situation, or file an issue in the grafana-buildpack repository
+		   (https://github.com/Scalingo/grafana-buildpack/issues).
+		Thanks <3
+
+		Aborting for now.
+	EOM
 fi
 
-
-build_dir="${1:-}"
-cache_dir="${2:-}"
-# env_dir="${3:-}"
-base_dir="$( cd -P "$( dirname "${0}" )" && pwd )"
-buildpack_dir="$( readlink -f "${base_dir}/.." )"
-tmp_dir="$( mktemp --tmpdir="/tmp" --directory "grafana-XXXX" )"
-
-readonly build_dir
-readonly cache_dir
-# readonly env_dir
-readonly base_dir
-readonly buildpack_dir
-readonly tmp_dir
-
-
-# shellcheck disable=SC1091
-source "${buildpack_dir}/bin/sc.sh"
-# shellcheck disable=SC1091
-source "${buildpack_dir}/VERSIONS"
-
-
-sc::_::start
-
-
-sc::_::step_start "Installing Grafana"
-
-## Version
-
-version="${GRAFANA_VERSION:-"${GRAFANA_DEFAULT_VERSION}"}"
-readonly version
-
-if [ -z "${version}" ]; then
-    sc::_::err "Could not retrieve Grafana version."
-    sc::_::info "Please use the GRAFANA_VERSION environment variable to specify the version to use."
-    exit
-fi
-
-sc::_::info "Using Grafana version ${version}."
-
-
-## Retrieving package
-
-dist="grafana-${version}.tar.gz"
-cache_file="${cache_dir}/${dist}"
-package_url="https://dl.grafana.com/oss/release/grafana-${version}.linux-amd64.tar.gz"
-checksum_url="${package_url}.sha256"
-
-readonly dist
-readonly cache_file
-readonly package_url
-readonly checksum_url
-
-mkdir --parents "${tmp_dir}"
-
-if [ -f "${cache_file}" ]; then
-    sc::_::info "Found file in cache."
-
-    sc::_::task_start "Checking validity"
-
-    if ! sc::_::check_cached_file "${cache_file}" "${checksum_url}"; then
-        sc::_::task_fail "File in cache is invalid, it has been removed."
-    else
-        sc::_::task_finish
-    fi
-fi
-
-if [ ! -f "${cache_file}" ]; then
-    sc::_::task_start "Downloading"
-
-    if ! sc::_::download "${package_url}" "${checksum_url}" "${cache_file}"; then
-        sc::_::task_fail "An error occured while downloading. Aborting."
-        exit
-    fi
-
-    sc::_::task_finish
-fi
-
-## Extracting
-
-sc::_::task_start "Extracting"
-
-if ! tar \
-    --extract \
-    --file="${cache_file}" \
-    --directory="${tmp_dir}" \
-    2>/dev/null
+if ! archive_url="$( cmn::inventory::get_url "${inventory}" "${version}" )"
 then
-    sc::_::task_fail "An error occured while extracting the archive. Aborting."
-    exit
+	cmn::main::fail 1 <<- EOM
+		Unable to retrieve download URL for version ${version}".
+		It seems like there's an issue with the buildpack inventory file.
+
+		Please either reach out to our Support Team to let them know about this
+		situation, or file an issue in the grafana-buildpack repository
+		(https://github.com/Scalingo/grafana-buildpack/issues)
+		Thanks <3
+
+		Aborting for now.
+	EOM
 fi
 
-sc::_::task_finish
+if ! archive_checksum="$( cmn::inventory::get_checksum "${inventory}" "${version}" )"
+then
+	cmn::main::fail 1 <<- EOM
+		Unable to retrieve checksum for version ${version}".
+		It seems like there's an issue with the buildpack inventory file.
 
-## Installing
+		Please either reach out to our Support Team to let them know about this
+		situation, or file an issue in the grafana-buildpack repository
+		(https://github.com/Scalingo/grafana-buildpack/issues)
+		Thanks <3
 
-sc::_::task_start "Installing"
-
-# Use brace expansion to handle the optional prefixing 'v':
-for src in "${tmp_dir}"/grafana-{v,}"${version}"; do
-    if [[ -d "${src}" ]]; then
-        if ! mv "${src}"/* --target-directory="${build_dir}"; then
-            sc::_::task_fail "An error occured while installing the files. Aborting."
-            exit
-        fi
-    fi
-done
-
-sc::_::task_finish
-
-sc::_::step_finish
-
-
-
-sc::_::step_start "Building Environment"
-
-export PATH="${build_dir}/bin:${PATH}"
-
-mkdir --parents "${build_dir}/.profile.d"
-
-cat << EOF > "${build_dir}/.profile.d/050-grafana.sh"
-export PATH="\${PATH}:\${HOME}/bin"
-EOF
-
-sc::_::step_finish
-
-
-
-sc::_::step_start "Installing Plugins"
-
-if [ ! -e "${GRAFANA_PLUGINS}" ]; then
-    OLD_IFS=${IFS}
-    IFS=','
-
-    plugin_dir="${build_dir}/plugins"
-    mkdir --parents "${plugin_dir}"
-
-    for plugin in ${GRAFANA_PLUGINS}; do
-        sc::_::task_start "Installing ${plugin}"
-
-        if ! "${build_dir}/bin/grafana" cli \
-                            --pluginsDir="${plugin_dir}" \
-                            plugins install "${plugin}" >/dev/null
-        then
-            sc::_::task_fail "An error occured while installing plugin ""${plugin}"". Going on."
-        else
-            sc::_::task_finish
-        fi
-    done
-
-    IFS=${OLD_IFS}
+		Aborting for now.
+	EOM
 fi
 
-sc::_::step_finish
+cache_file="${cache_dir:?}/grafana-${version}.tar.gz"
+grafana_dir="${build_dir:?}/grafana"
+build_log="${tmp_dir:?}/build.log"
 
+cmn::output::info "Deploying Grafana ${version}"
 
+# -----------------------------------------------------------------------------
 
-sc::_::step_start "Cleaning up"
+cmn::step::start "Installing Grafana"
 
-sc::_::task_start "Removing temporary files"
+if [[ ! -f "${cache_file}" ]]; then
+	# The archive doesn't exist in the cache.
 
-if ! rm --recursive --force "${tmp_dir}"; then
-    sc::_::task_fail
-    exit
+	# Remove any existing cached archive, as they are probably for another
+	# version:
+	cmn::task::start "Cleaning cache"
+	rm --recursive --force "${cache_dir:?}"/grafana*.tar.gz
+	cmn::task::finish
+
+	# Download appropriate version:
+	cmn::task::start "Downloading archive"
+	if ! cmn::file::download "${archive_url}" "${cache_file}"; then
+		cmn::main::fail "${?}" <<-EOM
+			Unable to download Grafana archive.
+			Aborting.
+		EOM
+	fi
+	cmn::task::finish
+else
+	# The archive is in cache.
+
+	cmn::output::info "Found matching file in cache."
 fi
 
-sc::_::task_finish
+# From this point, we have an archive in cache.
 
-sc::_::step_finish
+# We always check the archive validity to prevent cache corruption and other
+# issues.
+cmn::task::start "Checking archive validity"
+if ! cmn::file::validate_checksum "${cache_file}" "${archive_checksum}"; then
+	# File in cache does not seem valid,
+	# remove it so a future run can be successful
+	rm --force "${cache_file}"
 
+	cmn::main::fail 2 <<-EOM
+		The checksum for the archive file in the cache doesn't match what's
+		expected.
 
-sc::_::finish
+		Here are the most common causes:
+
+		- A networking issue occurred, causing the downloaded file to
+		  be incomplete or corrupt. Triggering a new deployment should force
+		  the platform to download the archive again, and the deployment should
+		  pass.
+
+		- Upstream replaced the archive and its checksum, resulting in the
+		  same version number having a different checksum. This could mean a
+		  malicious threat tampered the source archive and its checksum.
+		  Please check upstream for a potential explanation and make sure it's
+		  still trustable.
+
+		In all cases, the cached archive has been removed to force a new
+		download during the next deployment attempt.
+
+		Aborting.
+	EOM
+fi
+cmn::task::finish
+
+# From this point we have a valid file in cache.
+
+cmn::task::start "Extracting"
+mkdir --parents "${grafana_dir}"
+tar --extract --file="${cache_file}" --directory="${grafana_dir}" \
+	--strip-components=1
+cmn::task::finish
+
+# -----------------------------------------------------------------------------
+
+cmn::step::start "Building Environment"
+
+PATH="${grafana_dir:?}/bin:${PATH}"
+export PATH
+
+GF_PATHS_HOME="${grafana_dir}"
+export GF_PATHS_HOME
+
+cmn::task::start "Copying profile.d script"
+mkdir --parents "${build_dir:?}/.profile.d"
+cp "${buildpack_dir:?}/vendor/profile.d/050-grafana.sh" \
+	"${build_dir:?}/.profile.d/"
+cmn::task::finish
+
+# -----------------------------------------------------------------------------
+
+if [[ -n "${GRAFANA_PLUGINS}" ]]; then
+	cmn::step::start "Installing Plugins"
+
+	# Create an array of plugins from GRAFANA_PLUGINS:
+	IFS=',' read -ra plugins <<< "${GRAFANA_PLUGINS}"
+
+	# Default path for plugins:
+	plugins_dir="${grafana_dir}/plugins"
+
+	if [[ -n "${GF_PATHS_PLUGINS}" ]]; then
+		plugins_dir="${GF_PATHS_PLUGINS/\/app/"${build_dir:?}"}"
+	fi
+
+	mkdir --parents "${plugins_dir}"
+
+	for plugin in "${plugins[@]}"; do
+		cmn::task::start "Installing plugin ${plugin}"
+		if ! grafana cli \
+			--pluginsDir="${plugins_dir}" \
+			plugins install "${plugin}" \
+			>"${build_log}" 2>&1
+		then
+			cmn::main::fail "${?}" <<-EOM
+				Unable to install plugin ${plugin}.
+				Log:
+				$( cat "${build_log}" )
+
+				Aborting.
+			EOM
+		fi
+		cmn::task::finish
+	done
+fi
+
+# -----------------------------------------------------------------------------
+
+cmn::main::finish
